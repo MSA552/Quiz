@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aviation Quiz</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f4f8; margin: 0; display: flex; flex-direction: column; height: 100vh; }
+        .hidden { display: none !important; }
+        
+        .nav-bar { background: #1a202c; padding: 0 15px; display: flex; align-items: center; height: 60px; color: white; }
+        .nav-item { padding: 0 15px; cursor: pointer; height: 100%; display: flex; align-items: center; opacity: 0.7; font-weight: 600; }
+        .nav-item.active { background: #2d3748; opacity: 1; border-bottom: 4px solid #63b3ed; }
+        
+        .content { flex: 1; padding: 20px; overflow-y: auto; text-align: center; }
+        .card { background: white; max-width: 1000px; margin: 0 auto 20px; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; margin: 2px; font-size: 0.85rem; }
+        .g { background: #48bb78; } .r { background: #f56565; } .b { background: #4299e1; } .y { background: #ecc94b; color:black; } .d { background: #4a5568; } .p { background: #9f7aea; }
+        
+        .input { padding: 10px; border: 1px solid #cbd5e0; border-radius: 5px; width: 100%; box-sizing: border-box; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        th { background: #edf2f7; padding: 10px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+        
+        .timer-box { font-size: 2.5rem; color: #e53e3e; font-weight: bold; font-family: monospace; margin: 15px 0; }
+        .opt-btn { display: block; width: 100%; padding: 15px; margin: 8px 0; border: 2px solid #e2e8f0; background: white; border-radius: 8px; cursor: pointer; text-align: left; transition: 0.2s; }
+        .opt-btn:hover { background: #ebf8ff; border-color: #4299e1; }
+        .opt-btn.selected { background: #4299e1; color: white; border-color: #4299e1; }
+        
+        .review-item { text-align: left; padding: 10px; border: 1px solid #eee; margin-bottom: 5px; border-radius: 5px; }
+        .correct { background: #f0fff4; border-color: #48bb78; }
+        .incorrect { background: #fff5f5; border-color: #f56565; }
+        
+        .tiny-link { position: fixed; bottom: 5px; right: 5px; color: #cbd5e0; text-decoration: none; font-size: 10px; }
+    </style>
+</head>
+<body>
+
+<script>
+    // ⚠️ PASTE YOUR GOOGLE SCRIPT URL HERE ⚠️
+    const API_URL = "https://script.google.com/macros/s/AKfycbwA72AYLolHCczM1_RZcfYpHd3fovYrWCb8fkOWNijF2qHuq3o7_XeICPRy-XRLNarM_Q/exec";
+</script>
+
+<div id="view-student" style="padding:20px; min-height:100vh;">
+    <div id="s-login" class="card" style="text-align:center; margin-top:50px;">
+        <h1>Aviation Quiz</h1>
+        <input id="s-name" class="input" placeholder="Full Name" style="width:80%">
+        <br><br>
+        <button class="btn b" onclick="sJoin()">Join Session</button>
+        <p id="s-err" style="color:red; margin-top:10px;"></p>
+    </div>
+
+    <div id="s-waiting" class="card hidden" style="text-align:center; margin-top:50px;">
+        <h1>Welcome, <span id="disp-name"></span></h1>
+        <div style="font-size:3rem; margin:20px;">✈️</div>
+        <p style="color:#d69e2e; font-weight:bold; font-size:1.5rem;">Waiting for Instructor...</p>
+        <p>Status: <span id="s-status">Ready</span></p>
+    </div>
+
+    <div id="s-quiz" class="card hidden">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div id="timer" class="timer-box">--:--</div>
+            <div style="color:#718096">Q <span id="q-idx">1</span> / <span id="q-total">--</span></div>
+        </div>
+        <div id="edit-banner" class="hidden" style="background:#e9d8fd; color:#553c9a; padding:5px; font-weight:bold;">EDIT MODE - Timer Paused</div>
+        <h3 id="q-text" style="font-size:1.4rem; margin:20px 0; min-height:60px;">Loading...</h3>
+        <div id="q-options"></div>
+        <div style="display:flex; justify-content:space-between; margin-top:20px;">
+            <button class="btn d" onclick="nav(-1)" id="btn-prev">Previous</button>
+            <button class="btn b" onclick="nav(1)" id="btn-next">Next</button>
+            <button class="btn g hidden" onclick="submit(true)" id="btn-submit">Submit Quiz</button>
+        </div>
+    </div>
+
+    <div id="s-finish" class="card hidden" style="text-align:center; margin-top:50px;">
+        <h1>Quiz Complete</h1>
+        <div id="res-box" class="hidden">
+            <div id="final-score" style="font-size:5rem; color:#48bb78; font-weight:bold;">--</div>
+            <div id="review-list" style="margin-top:20px;"></div>
+        </div>
+        <div id="pend-box" class="hidden" style="margin-top:20px;">
+            <p style="font-size:1.2rem; color:#d69e2e">Grades hidden.</p>
+        </div>
+    </div>
+</div>
+
+<div id="view-admin" class="hidden">
+    <div id="admin-auth" style="position:fixed; top:0; left:0; width:100%; height:100%; background:#2d3748; display:flex; justify-content:center; align-items:center; z-index:999;">
+        <div class="card" style="width:300px; text-align:center;">
+            <h2>Instructor Login</h2>
+            <input type="password" id="admin-pass" class="input" placeholder="Password">
+            <br><br>
+            <button class="btn b" onclick="auth()">Login</button>
+        </div>
+    </div>
+
+    <div class="nav-bar">
+        <div class="nav-item active" onclick="tab('connect')">Connect</div>
+        <div class="nav-item" onclick="tab('status')">Live Status</div>
+        <div class="nav-item" onclick="tab('ctrl')">Controls</div>
+        <div class="nav-item" onclick="tab('q')">Questions</div>
+        <div class="nav-item" onclick="tab('stats')">Analytics</div>
+        <div style="margin-left:auto; cursor:pointer;" onclick="location.reload()">Logout</div>
+    </div>
+
+    <div class="content">
+        <div id="tab-connect" class="card">
+            <h2>Join Info</h2>
+            <div style="font-size:4rem; font-weight:bold; color:#e53e3e;"><span id="wait-count">0</span> Waiting</div>
+            <div id="qrcode" style="display:flex; justify-content:center; margin:20px;"></div>
+            <p id="share-link" style="color:#4299e1; font-weight:bold;"></p>
+        </div>
+
+        <div id="tab-status" class="card hidden" style="max-width:1200px;">
+            <div style="display:flex; justify-content:space-between;">
+                <h2>Live Student Monitor</h2>
+                <button class="btn g btn-sm" onclick="sync()">Refresh</button>
+            </div>
+            <table><thead><tr><th>Name</th><th>IP</th><th>Limit</th><th>Status</th><th>Score</th><th>Action</th></tr></thead><tbody id="roster-body"></tbody></table>
+        </div>
+
+        <div id="tab-ctrl" class="card hidden">
+            <h2>Session Controls</h2>
+            <div style="background:#edf2f7; padding:15px; border-radius:5px; text-align:left; margin-bottom:20px;">
+                <label>Name:</label> <input id="sess-name" class="input" style="width:200px;">
+                <button class="btn b btn-sm" onclick="setConf('SessionName', document.getElementById('sess-name').value)">Update</button>
+                <p>Status: <strong id="status-disp" style="color:#4299e1;">--</strong></p>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:15px;">
+                <button class="btn g" onclick="startGlobal()">▶ START QUIZ (Everyone)</button>
+                <button class="btn y" onclick="setState('WAITING')">↺ RESET ROUND (Wait Room)</button>
+                <button class="btn b" onclick="setState('GRADING')">📝 STOP & GRADE</button>
+                <button class="btn r" onclick="setState('CLOSED')">❌ END SESSION</button>
+            </div>
+            <hr>
+            <label><input type="checkbox" id="res-toggle" onchange="toggleRes()"> Show Results</label>
+        </div>
+
+        <div id="tab-q" class="card hidden">
+            <h3>Questions</h3>
+            <input type="hidden" id="edit-idx" value="-1">
+            <input id="q-txt" class="input" placeholder="Text" style="width:96%; margin-bottom:10px;">
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <input id="q-a" class="input" placeholder="A"><input id="q-b" class="input" placeholder="B">
+                <input id="q-c" class="input" placeholder="C"><input id="q-d" class="input" placeholder="D">
+            </div>
+            <br>Correct: <select id="q-corr" class="input" style="width:80px;"><option>A</option><option>B</option><option>C</option><option>D</option></select>
+            <button class="btn b" onclick="saveQ()" id="btn-save">Add</button>
+            <button class="btn y hidden" onclick="cancelQ()" id="btn-cancel">Cancel</button>
+            <hr>
+            <table><thead><tr><th>#</th><th>Text</th><th>Ans</th><th>Edit</th></tr></thead><tbody id="q-list"></tbody></table>
+        </div>
+
+        <div id="tab-stats" class="card hidden">
+            <h2>Correct Responses</h2>
+            <canvas id="chart"></canvas>
+        </div>
+    </div>
+</div>
+
+<a href="#" class="tiny-link" onclick="showAdmin()">π</a>
+
+<script>
+// --- GLOBAL ---
+let G = { state:"", show_results:false, student:null, questions:[] };
+// Added LAST_START to track session changes
+let ANSWERS = {}, CUR_IDX = 0, TIMER = null, REMAINING = 0, NAME = "", MY_IP = "", LAST_START = null;
+
+// --- NETWORK ---
+const GET = (p) => fetch(`${API_URL}?` + new URLSearchParams(p)).then(r=>r.json());
+const POST = (d) => fetch(API_URL, {method:"POST", body:JSON.stringify(d)}).then(r=>r.json());
+
+// --- STUDENT ---
+async function sJoin() {
+    NAME = document.getElementById('s-name').value.trim();
+    if(!NAME) return;
+    try { MY_IP = (await (await fetch('https://api.ipify.org?format=json')).json()).ip; } catch(e){}
+    POST({action:'join', name:NAME, ip:MY_IP}).then(d => {
+        if(d.success) {
+            document.getElementById('s-login').classList.add('hidden');
+            document.getElementById('s-waiting').classList.remove('hidden');
+            document.getElementById('disp-name').innerText = NAME;
+            setInterval(poll, 2000); poll();
+        } else { document.getElementById('s-err').innerText = d.error; }
+    });
+}
+
+function poll() {
+    GET({action:'sync', name:NAME}).then(d => {
+        G = d; 
+        const s = d.student;
+        if(!s) return; // Kicked
+
+        // *** DETECT RESTART AND WIPE ANSWERS ***
+        if(LAST_START !== null && s.start !== LAST_START) {
+            ANSWERS = {};
+            CUR_IDX = 0;
+        }
+        LAST_START = s.start;
+
+        // 1. WAITING
+        if(s.status === "Ready") {
+            showPage('s-waiting');
+            document.getElementById('s-status').innerText = "Ready";
+            return;
+        }
+
+        // 2. ACTIVE / EDITING
+        if(s.status === "Working" || s.status === "Editing") {
+            if(document.getElementById('s-quiz').classList.contains('hidden')) startUI();
+            
+            if(s.status === "Editing") {
+                document.getElementById('timer').innerText = "--:--";
+                document.getElementById('edit-banner').classList.remove('hidden');
+                if(s.answers && s.answers !== "{}" && Object.keys(ANSWERS).length === 0) {
+                    ANSWERS = JSON.parse(s.answers);
+                }
+            } else {
+                document.getElementById('edit-banner').classList.add('hidden');
+                if(s.start > 0) {
+                    let elap = Math.floor((d.server_time - s.start)/1000);
+                    REMAINING = s.limit - elap;
+                    if(REMAINING < 0) REMAINING = 0;
+                } else { REMAINING = s.limit; }
+                
+                let m=Math.floor(REMAINING/60), sec=REMAINING%60;
+                document.getElementById('timer').innerText = `${m}:${sec<10?'0':''}${sec}`;
+                if(REMAINING<=0) submit(true);
+            }
+        }
+
+        // 3. FINISH
+        if(s.status === "Finished") {
+            showPage('s-finish');
+            if(d.show_results) {
+                document.getElementById('res-box').classList.remove('hidden');
+                document.getElementById('pend-box').classList.add('hidden');
+                renderReview();
+            } else {
+                document.getElementById('res-box').classList.add('hidden');
+                document.getElementById('pend-box').classList.remove('hidden');
+            }
+        }
+
+        if(d.state === "CLOSED") window.location.replace("about:blank");
+        if(d.state === "GRADING" && s.status === "Working") submit(true);
+    });
+}
+
+function startUI() {
+    showPage('s-quiz');
+    document.getElementById('q-total').innerText = G.questions.length;
+    renderQ();
+}
+
+function renderQ() {
+    if(!G.questions[CUR_IDX]) return;
+    const q = G.questions[CUR_IDX];
+    document.getElementById('q-idx').innerText = CUR_IDX+1;
+    document.getElementById('q-text').innerText = q.text;
+    let h = "";
+    ['A','B','C','D'].forEach(k => {
+        let cls = ANSWERS[q.id]===k ? "selected" : "";
+        h += `<button class="opt-btn ${cls}" onclick="pick('${k}')">${k}) ${q.choices[k]}</button>`;
+    });
+    document.getElementById('q-options').innerHTML = h;
+    document.getElementById('btn-prev').classList.toggle('hidden', CUR_IDX===0);
+    document.getElementById('btn-next').classList.toggle('hidden', CUR_IDX===G.questions.length-1);
+    document.getElementById('btn-submit').classList.toggle('hidden', CUR_IDX!==G.questions.length-1);
+}
+
+function pick(k) {
+    ANSWERS[G.questions[CUR_IDX].id] = k;
+    renderQ();
+    let score=0; G.questions.forEach(q=>{if(ANSWERS[q.id]===q.answer)score++});
+    POST({action:'submit', name:NAME, score:score, answers:ANSWERS, final:false});
+}
+
+function nav(d) { CUR_IDX += d; renderQ(); }
+
+function submit(final) {
+    let score=0; G.questions.forEach(q=>{if(ANSWERS[q.id]===q.answer)score++});
+    let pct = Math.round((score/G.questions.length)*100);
+    document.getElementById('final-score').innerText = pct + "%";
+    POST({action:'submit', name:NAME, score:score, answers:ANSWERS, final:final});
+}
+
+function renderReview() {
+    let h="";
+    G.questions.forEach((q,i) => {
+        let my = ANSWERS[q.id], ok = my===q.answer;
+        h += `<div class="review-item ${ok?'correct':'incorrect'}"><strong>${i+1}. ${q.text}</strong><br>You: ${my||'-'} | Ans: ${q.answer}</div>`;
+    });
+    document.getElementById('review-list').innerHTML = h;
+}
+
+function showPage(id) {
+    ['s-login','s-waiting','s-quiz','s-finish'].forEach(x => document.getElementById(x).classList.add('hidden'));
+    document.getElementById(id).classList.remove('hidden');
+}
+
+// --- ADMIN ---
+function showAdmin() {
+    document.getElementById('view-student').classList.add('hidden');
+    document.getElementById('view-admin').classList.remove('hidden');
+    new QRCode(document.getElementById("qrcode"), window.location.href);
+    document.getElementById('share-link').innerText = window.location.href;
+}
+
+function auth() {
+    let p = document.getElementById('admin-pass').value.trim();
+    GET({action:'login', pass:p}).then(d => {
+        if(d.success) { 
+            document.getElementById('admin-auth').classList.add('hidden'); 
+            setInterval(sync, 2000); sync(); 
+        } else alert("Invalid");
+    });
+}
+
+function sync() {
+    GET({action:'sync'}).then(d => {
+        G = d;
+        document.getElementById('status-disp').innerText = d.state;
+        document.getElementById('wait-count').innerText = d.waiting_count;
+        document.getElementById('sess-name').placeholder = d.session;
+        document.getElementById('res-toggle').checked = d.show_results;
+
+        // Roster
+        let h = "";
+        let qStats = {}; d.questions.forEach(q => qStats[q.id]=0);
+        let finishers = 0;
+
+        d.roster.forEach(s => {
+            if(s.status==="Finished") {
+                finishers++;
+                let a = JSON.parse(s.answers);
+                d.questions.forEach(q => { if(a[q.id]===q.answer) qStats[q.id]++; });
+            }
+            h += `<tr><td>${s.name}</td><td>${s.ip}</td><td><b>${s.limit}s</b> 
+            <button class="btn b btn-sm" onclick="mod('${s.name}','time',30)">+</button> <button class="btn y btn-sm" onclick="mod('${s.name}','time',-30)">-</button></td>
+            <td>${s.status}</td><td>${s.score}</td>
+            <td>
+            <button class="btn g btn-sm" onclick="mod('${s.name}','start_indi')">Start</button>
+            <button class="btn y btn-sm" onclick="mod('${s.name}','restart')">Restart</button>
+            <button class="btn p btn-sm" onclick="mod('${s.name}','allow_edit')">Edit</button>
+            <button class="btn b btn-sm" onclick="mod('${s.name}','end')">End</button>
+            <button class="btn r btn-sm" onclick="mod('${s.name}','del')">Del</button>
+            </td></tr>`;
+        });
+        document.getElementById('roster-body').innerHTML = h;
+
+        // Chart
+        if(!window.C) window.C = new Chart(document.getElementById('chart'), {type:'bar', data:{labels:[], datasets:[{label:'Correct', data:[]}]}});
+        window.C.data.labels = d.questions.map((q,i)=>"Q"+(i+1));
+        window.C.data.datasets[0].data = d.questions.map(q => finishers>0 ? qStats[q.id] : 0);
+        window.C.update();
+
+        // Questions
+        h="";
+        d.questions.forEach((q,i) => {
+            h+=`<tr><td>${i+1}</td><td>${q.text}</td><td>${q.answer}</td><td><button class="btn b btn-sm" onclick="editQ(${i})">Edit</button><button class="btn r btn-sm" onclick="delQ(${i})">X</button></td></tr>`;
+        });
+        document.getElementById('q-list').innerHTML = h;
+    });
+}
+
+function startGlobal() {
+    if(!confirm("Start Quiz for All Waiting?")) return;
+    POST({action:'global_start'});
+    // REMOVED "setState('ACTIVE')" -- this prevented the conflict.
+    // The backend global_start sets ACTIVE automatically.
+}
+
+function tab(t) { ['connect','status','ctrl','q','stats'].forEach(x=>document.getElementById('tab-'+x).classList.add('hidden')); document.getElementById('tab-'+t).classList.remove('hidden'); }
+function setConf(k,v) { POST({action:'set_config', key:k, val:v}).then(sync); }
+function setState(s) { POST({action:'set_config', key:'State', val:s, wipe:s==='ACTIVE'}).then(sync); }
+function toggleRes() { POST({action:'set_config', key:'ShowResults', val:document.getElementById('res-toggle').checked}).then(sync); }
+function mod(n,t,v) { POST({action:'mod_student', name:n, type:t, val:v}).then(sync); }
+
+// Edit Q
+function editQ(i) {
+    let q = G.questions[i];
+    document.getElementById('edit-idx').value = i;
+    document.getElementById('q-txt').value = q.text;
+    document.getElementById('q-a').value = q.choices.A; document.getElementById('q-b').value = q.choices.B;
+    document.getElementById('q-c').value = q.choices.C; document.getElementById('q-d').value = q.choices.D;
+    document.getElementById('q-corr').value = q.answer;
+    document.getElementById('btn-save').innerText = "Update";
+    document.getElementById('btn-cancel').classList.remove('hidden');
+    document.getElementById('tab-q').scrollIntoView();
+}
+function cancelQ() {
+    document.getElementById('edit-idx').value = -1;
+    document.getElementById('q-txt').value = "";
+    document.getElementById('q-a').value = ""; document.getElementById('q-b').value = "";
+    document.getElementById('q-c').value = ""; document.getElementById('q-d').value = "";
+    document.getElementById('btn-save').innerText = "Add";
+    document.getElementById('btn-cancel').classList.add('hidden');
+}
+function saveQ() {
+    let i = parseInt(document.getElementById('edit-idx').value);
+    let p = {
+        action: 'save_q', index: i,
+        text: document.getElementById('q-txt').value,
+        a: document.getElementById('q-a').value, b: document.getElementById('q-b').value,
+        c: document.getElementById('q-c').value, d: document.getElementById('q-d').value,
+        correct: document.getElementById('q-corr').value
+    };
+    POST(p).then(()=>{ cancelQ(); sync(); });
+}
+function delQ(i) { if(confirm("Del?")) POST({action:'del_q', index:i}).then(sync); }
+
+</script>
+</body>
+</html>
