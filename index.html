@@ -18,6 +18,13 @@
         .card { background: white; max-width: 1000px; margin: 0 auto 20px; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
         
         .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; color: white; margin: 2px; font-size: 0.85rem; }
+        .btn[disabled] { opacity: 0.7; cursor: not-allowed; }
+        .btn-anim { animation: btn-pop 0.28s ease; }
+        @keyframes btn-pop {
+            0% { transform: scale(1); }
+            45% { transform: scale(0.92); }
+            100% { transform: scale(1.03); }
+        }
         .g { background: #48bb78; } .r { background: #f56565; } .b { background: #4299e1; } .y { background: #ecc94b; color:black; } .d { background: #4a5568; } .p { background: #9f7aea; }
         
         .input { padding: 10px; border: 1px solid #cbd5e0; border-radius: 5px; width: 100%; box-sizing: border-box; }
@@ -35,6 +42,18 @@
         .incorrect { background: #fff5f5; border-color: #f56565; }
         
         .tiny-link { position: fixed; bottom: 5px; right: 5px; color: #cbd5e0; text-decoration: none; font-size: 10px; }
+
+        @media (max-width: 600px) {
+            body { font-size: 18px; }
+            h1 { font-size: 2rem; }
+            h2 { font-size: 1.6rem; }
+            h3 { font-size: 1.35rem; }
+            p, label, td, th, input, button { font-size: 1.05rem; }
+            .btn { padding: 12px 16px; font-size: 1.05rem; }
+            .opt-btn { padding: 18px; font-size: 1.05rem; }
+            .timer-box { font-size: 3rem; }
+            .card { padding: 20px; }
+        }
     </style>
 </head>
 <body>
@@ -46,10 +65,10 @@
 
 <div id="view-student" style="padding:20px; min-height:100vh;">
     <div id="s-login" class="card" style="text-align:center; margin-top:50px;">
-        <h1>Aviation Quiz</h1>
+        <h1>MSA552 Quiz</h1>
         <input id="s-name" class="input" placeholder="Full Name" style="width:80%">
         <br><br>
-        <button class="btn b" onclick="sJoin()">Join Session</button>
+        <button id="btn-join" class="btn b" onclick="sJoin()">Join Session</button>
         <p id="s-err" style="color:red; margin-top:10px;"></p>
     </div>
 
@@ -77,12 +96,14 @@
 
     <div id="s-finish" class="card hidden" style="text-align:center; margin-top:50px;">
         <h1>Quiz Complete</h1>
-        <div id="res-box" class="hidden">
+        <div id="grade-box" class="hidden">
             <div id="final-score" style="font-size:5rem; color:#48bb78; font-weight:bold;">--</div>
-            <div id="review-list" style="margin-top:20px;"></div>
+        </div>
+        <div id="res-box" class="hidden" style="margin-top:20px;">
+            <div id="review-list"></div>
         </div>
         <div id="pend-box" class="hidden" style="margin-top:20px;">
-            <p style="font-size:1.2rem; color:#d69e2e">Grades hidden.</p>
+            <p style="font-size:1.2rem; color:#d69e2e">Grades/results hidden.</p>
         </div>
     </div>
 </div>
@@ -116,7 +137,7 @@
 
         <div id="tab-status" class="card hidden" style="max-width:1200px;">
             <div style="display:flex; justify-content:space-between;">
-                <h2>Live Student Monitor</h2>
+                <h2>Live Monitor</h2>
                 <button class="btn g btn-sm" onclick="sync()">Refresh</button>
             </div>
             <table><thead><tr><th>Name</th><th>IP</th><th>Limit</th><th>Status</th><th>Score</th><th>Action</th></tr></thead><tbody id="roster-body"></tbody></table>
@@ -136,6 +157,8 @@
                 <button class="btn r" onclick="setState('CLOSED')">❌ END SESSION</button>
             </div>
             <hr>
+            <label><input type="checkbox" id="grade-toggle" onchange="toggleGrades()"> Show Grades</label>
+            <br>
             <label><input type="checkbox" id="res-toggle" onchange="toggleRes()"> Show Results</label>
         </div>
 
@@ -167,7 +190,7 @@
 // --- GLOBAL ---
 let G = { state:"", show_results:false, student:null, questions:[] };
 // Added LAST_START to track session changes
-let ANSWERS = {}, CUR_IDX = 0, TIMER = null, REMAINING = 0, NAME = "", MY_IP = "", LAST_START = null;
+let ANSWERS = {}, CUR_IDX = 0, TIMER = null, REMAINING = 0, NAME = "", MY_IP = "", LAST_START = null, SUBMITTING = false;
 
 // --- NETWORK ---
 const GET = (p) => fetch(`${API_URL}?` + new URLSearchParams(p)).then(r=>r.json());
@@ -175,8 +198,22 @@ const POST = (d) => fetch(API_URL, {method:"POST", body:JSON.stringify(d)}).then
 
 // --- STUDENT ---
 async function sJoin() {
+    const joinBtn = document.getElementById('btn-join');
+    if (joinBtn) {
+        joinBtn.classList.remove('btn-anim');
+        void joinBtn.offsetWidth;
+        joinBtn.classList.add('btn-anim');
+        joinBtn.innerText = "Joining Session...";
+        joinBtn.disabled = true;
+    }
     NAME = document.getElementById('s-name').value.trim();
-    if(!NAME) return;
+    if(!NAME) {
+        if (joinBtn) {
+            joinBtn.innerText = "Join Session";
+            joinBtn.disabled = false;
+        }
+        return;
+    }
     try { MY_IP = (await (await fetch('https://api.ipify.org?format=json')).json()).ip; } catch(e){}
     POST({action:'join', name:NAME, ip:MY_IP}).then(d => {
         if(d.success) {
@@ -184,7 +221,13 @@ async function sJoin() {
             document.getElementById('s-waiting').classList.remove('hidden');
             document.getElementById('disp-name').innerText = NAME;
             setInterval(poll, 2000); poll();
-        } else { document.getElementById('s-err').innerText = d.error; }
+        } else {
+            document.getElementById('s-err').innerText = d.error;
+            if (joinBtn) {
+                joinBtn.innerText = "Join Session";
+                joinBtn.disabled = false;
+            }
+        }
     });
 }
 
@@ -234,15 +277,24 @@ function poll() {
 
         // 3. FINISH
         if(s.status === "Finished") {
+            setSubmitting(false);
             showPage('s-finish');
-            if(d.show_results) {
-                document.getElementById('res-box').classList.remove('hidden');
-                document.getElementById('pend-box').classList.add('hidden');
-                renderReview();
-            } else {
-                document.getElementById('res-box').classList.add('hidden');
-                document.getElementById('pend-box').classList.remove('hidden');
+            const showGrades = !!d.show_grades;
+            const showResults = !!d.show_results;
+            if (showGrades) {
+                let finalAnswers = ANSWERS;
+                if (s.answers && s.answers !== "{}") {
+                    try { finalAnswers = JSON.parse(s.answers); } catch(e) {}
+                }
+                let score=0;
+                d.questions.forEach(q=>{ if(finalAnswers[q.id]===q.answer) score++; });
+                let pct = d.questions.length ? Math.round((score/d.questions.length)*100) : 0;
+                document.getElementById('final-score').innerText = pct + "%";
             }
+            document.getElementById('grade-box').classList.toggle('hidden', !showGrades);
+            document.getElementById('res-box').classList.toggle('hidden', !showResults);
+            document.getElementById('pend-box').classList.toggle('hidden', showGrades || showResults);
+            if(showResults) renderReview();
         }
 
         if(d.state === "CLOSED") window.location.replace("about:blank");
@@ -253,6 +305,7 @@ function poll() {
 function startUI() {
     showPage('s-quiz');
     document.getElementById('q-total').innerText = G.questions.length;
+    setSubmitting(false);
     renderQ();
 }
 
@@ -264,24 +317,29 @@ function renderQ() {
     let h = "";
     ['A','B','C','D'].forEach(k => {
         let cls = ANSWERS[q.id]===k ? "selected" : "";
-        h += `<button class="opt-btn ${cls}" onclick="pick('${k}')">${k}) ${q.choices[k]}</button>`;
+        h += `<button class="opt-btn ${cls}" onclick="pick('${k}')" ${SUBMITTING ? "disabled" : ""}>${k}) ${q.choices[k]}</button>`;
     });
     document.getElementById('q-options').innerHTML = h;
     document.getElementById('btn-prev').classList.toggle('hidden', CUR_IDX===0);
     document.getElementById('btn-next').classList.toggle('hidden', CUR_IDX===G.questions.length-1);
     document.getElementById('btn-submit').classList.toggle('hidden', CUR_IDX!==G.questions.length-1);
+    document.getElementById('btn-prev').disabled = SUBMITTING;
+    document.getElementById('btn-next').disabled = SUBMITTING;
+    document.getElementById('btn-submit').disabled = SUBMITTING;
 }
 
 function pick(k) {
+    if (SUBMITTING) return;
     ANSWERS[G.questions[CUR_IDX].id] = k;
     renderQ();
     let score=0; G.questions.forEach(q=>{if(ANSWERS[q.id]===q.answer)score++});
     POST({action:'submit', name:NAME, score:score, answers:ANSWERS, final:false});
 }
 
-function nav(d) { CUR_IDX += d; renderQ(); }
+function nav(d) { if (SUBMITTING) return; CUR_IDX += d; renderQ(); }
 
 function submit(final) {
+    setSubmitting(true);
     let score=0; G.questions.forEach(q=>{if(ANSWERS[q.id]===q.answer)score++});
     let pct = Math.round((score/G.questions.length)*100);
     document.getElementById('final-score').innerText = pct + "%";
@@ -292,9 +350,17 @@ function renderReview() {
     let h="";
     G.questions.forEach((q,i) => {
         let my = ANSWERS[q.id], ok = my===q.answer;
-        h += `<div class="review-item ${ok?'correct':'incorrect'}"><strong>${i+1}. ${q.text}</strong><br>You: ${my||'-'} | Ans: ${q.answer}</div>`;
+        const ansText = q.choices && q.choices[q.answer] ? ` - ${q.choices[q.answer]}` : "";
+        h += `<div class="review-item ${ok?'correct':'incorrect'}"><strong>${i+1}. ${q.text}</strong><br>You: ${my||'-'} | Ans: ${q.answer}${ansText}</div>`;
     });
     document.getElementById('review-list').innerHTML = h;
+}
+
+function setSubmitting(isSubmitting) {
+    SUBMITTING = isSubmitting;
+    const btn = document.getElementById('btn-submit');
+    if (btn) btn.innerText = isSubmitting ? "Submitting Quiz..." : "Submit Quiz";
+    renderQ();
 }
 
 function showPage(id) {
@@ -326,6 +392,7 @@ function sync() {
         document.getElementById('status-disp').innerText = d.state;
         document.getElementById('wait-count').innerText = d.waiting_count;
         document.getElementById('sess-name').placeholder = d.session;
+        document.getElementById('grade-toggle').checked = d.show_grades;
         document.getElementById('res-toggle').checked = d.show_results;
 
         // Roster
@@ -353,7 +420,11 @@ function sync() {
         document.getElementById('roster-body').innerHTML = h;
 
         // Chart
-        if(!window.C) window.C = new Chart(document.getElementById('chart'), {type:'bar', data:{labels:[], datasets:[{label:'Correct', data:[]}]}});
+        if(!window.C) window.C = new Chart(document.getElementById('chart'), {
+            type:'bar',
+            data:{labels:[], datasets:[{label:'Correct', data:[]}]},
+            options:{scales:{y:{ticks:{stepSize:1}}}}
+        });
         window.C.data.labels = d.questions.map((q,i)=>"Q"+(i+1));
         window.C.data.datasets[0].data = d.questions.map(q => finishers>0 ? qStats[q.id] : 0);
         window.C.update();
@@ -377,6 +448,7 @@ function startGlobal() {
 function tab(t) { ['connect','status','ctrl','q','stats'].forEach(x=>document.getElementById('tab-'+x).classList.add('hidden')); document.getElementById('tab-'+t).classList.remove('hidden'); }
 function setConf(k,v) { POST({action:'set_config', key:k, val:v}).then(sync); }
 function setState(s) { POST({action:'set_config', key:'State', val:s, wipe:s==='ACTIVE'}).then(sync); }
+function toggleGrades() { POST({action:'set_config', key:'ShowGrades', val:document.getElementById('grade-toggle').checked}).then(sync); }
 function toggleRes() { POST({action:'set_config', key:'ShowResults', val:document.getElementById('res-toggle').checked}).then(sync); }
 function mod(n,t,v) { POST({action:'mod_student', name:n, type:t, val:v}).then(sync); }
 
